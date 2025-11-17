@@ -1,11 +1,18 @@
 #!/system/bin/sh
 
 # 配置项（按需修改）
-# 代理端口（透明代理程序监听端口）
+
+# 代理软件配置
+# 代理运行用户与用户组
+CORE_USER_GROUP="root:net_admin"
+# 代理流量标记
+ROUTING_MARK="6666"
+# 代理端口 (透明代理程序监听端口)
 PROXY_TCP_PORT="1536"
 PROXY_UDP_PORT="1536"
 
 # DNS 配置
+# DNS 拦截方式 (0:关闭, 1:tproxy, 2:redirect)
 DNS_HIJACK_ENABLE=1
 # DNS 监听端口
 DNS_PORT="1053"
@@ -47,6 +54,28 @@ APP_PROXY_MODE="blacklist"
 
 # Dry-run 模式（默认关闭）
 DRY_RUN=0
+
+check_kernel_feature() {
+    feature="$1"
+    config_name="CONFIG_${feature}"
+
+    if [ -f /proc/config.gz ]; then
+        zcat /proc/config.gz | grep -qE "^${config_name}=[ym]$"
+    else
+        # 备用方法：检查模块是否加载（仅检测模块，内置功能需其他方法比如检查 dmesg）
+        # lsmod | grep -q "$feature" || return 1
+        return 1
+    fi
+}
+
+# 用户与组解析
+validate_user_group() {
+    IFS=':' read -r CORE_USER CORE_GROUP <<< "$CORE_USER_GROUP"
+    [ -z "$CORE_USER" ] || [ -z "$CORE_GROUP" ] && {
+        CORE_USER="root"
+        CORE_GROUP="net_admin"
+    }
+}
 
 # 命令执行函数（支持 dry-run）
 execute() {
@@ -221,6 +250,9 @@ setup_tproxy_chain4() {
     iptables -t mangle -A PROXY_OUTPUT -j DNS_HIJACK_OUT
 
     # 内网地址绕过
+    if check_kernel_feature "NETFILTER_XT_MATCH_ADDRTYPE"; then
+        iptables -t mangle -A BYPASS_IP -m addrtype --dst-type LOCAL -j RETURN
+    fi
     for subnet4 in 0.0.0.0/8 10.0.0.0/8 100.0.0.0/8 127.0.0.0/8 \
         169.254.0.0/16 192.0.0.0/24 192.0.2.0/24 192.88.99.0/24 \
         192.168.0.0/16 198.51.100.0/24 203.0.113.0/24 \
@@ -261,9 +293,13 @@ setup_tproxy_chain4() {
     iptables -t mangle -A PROXY_INTERFACE -j ACCEPT
 
     # 绕过本机代理程序自身
-    iptables -t mangle -A APP_CHAIN -m owner --uid-owner 0 --gid-owner 3005 -j ACCEPT
-
-    if [ "${APP_PROXY_ENABLE:-0}" -eq 1 ]; then
+    if check_kernel_feature "NETFILTER_XT_MATCH_OWNER"; then
+        iptables -t mangle -A APP_CHAIN -m owner --uid-owner "$CORE_USER" --gid-owner "$CORE_GROUP" -j ACCEPT
+    elif check_kernel_feature "NETFILTER_XT_MATCH_MARK"; then
+        iptables -t mangle -A APP_CHAIN -m mark --mark "$ROUTING_MARK" -j ACCEPT
+    fi
+    # 处理黑白名单
+    if [ "${APP_PROXY_ENABLE:-0}" -eq 1 ] && check_kernel_feature "NETFILTER_XT_MATCH_OWNER"; then
         # 根据模式填充
         case "$APP_PROXY_MODE" in
             blacklist)
@@ -341,6 +377,9 @@ setup_tproxy_chain6() {
     ip6tables -t mangle -A PROXY_OUTPUT6 -j DNS_HIJACK_OUT6
 
     # 内网地址绕过
+    if check_kernel_feature "NETFILTER_XT_MATCH_ADDRTYPE"; then
+        ip6tables -t mangle -A BYPASS_IP6 -m addrtype --dst-type LOCAL -j RETURN
+    fi
     for subnet6 in ::/128 ::1/128 ::ffff:0:0/96 \
         100::/64 64:ff9b::/96 2001::/32 2001:10::/28 \
         2001:20::/28 2001:db8::/32 \
@@ -379,9 +418,14 @@ setup_tproxy_chain6() {
     ip6tables -t mangle -A PROXY_INTERFACE6 -j ACCEPT
 
     # 绕过本机代理程序自身
-    ip6tables -t mangle -A APP_CHAIN6 -m owner --uid-owner 0 --gid-owner 3005 -j ACCEPT
+    if check_kernel_feature "NETFILTER_XT_MATCH_OWNER"; then
+        ip6tables -t mangle -A APP_CHAIN6 -m owner --uid-owner "$CORE_USER" --gid-owner "$CORE_GROUP" -j ACCEPT
+    elif check_kernel_feature "NETFILTER_XT_MATCH_MARK"; then
+        ip6tables -t mangle -A APP_CHAIN6 -m mark --mark "$ROUTING_MARK" -j ACCEPT
+    fi
 
-    if [ "${APP_PROXY_ENABLE:-0}" -eq 1 ]; then
+    # 处理黑白名单
+    if [ "${APP_PROXY_ENABLE:-0}" -eq 1 ] && check_kernel_feature "NETFILTER_XT_MATCH_OWNER"; then
         # 根据模式填充
         case "$APP_PROXY_MODE" in
             blacklist)
@@ -417,14 +461,16 @@ setup_tproxy_chain6() {
             ;;
         2)
             # 非 TPROXY 方式接收 DNS 流量
-            safe_chain_create nat "NAT_DNS_HIJACK6"
-            ip6tables -t nat -A NAT_DNS_HIJACK6 -p udp --dport 53 -j REDIRECT --to-ports "$DNS_PORT"
+            if check_kernel_feature "IP6_NF_NAT" && check_kernel_feature "IP6_NF_TARGET_REDIRECT"; then
+                safe_chain_create nat "NAT_DNS_HIJACK6"
+                ip6tables -t nat -A NAT_DNS_HIJACK6 -p udp --dport 53 -j REDIRECT --to-ports "$DNS_PORT"
 
-            [ "${PROXY_MOBILE:-1}" -eq 1 ] && ip6tables -t nat -A PREROUTING -i "$MOBILE_INTERFACE" -j NAT_DNS_HIJACK6
-            [ "${PROXY_WIFI:-1}" -eq 1 ] && ip6tables -t nat -A PREROUTING -i "$WIFI_INTERFACE" -j NAT_DNS_HIJACK6
+                [ "${PROXY_MOBILE:-1}" -eq 1 ] && ip6tables -t nat -A PREROUTING -i "$MOBILE_INTERFACE" -j NAT_DNS_HIJACK6
+                [ "${PROXY_WIFI:-1}" -eq 1 ] && ip6tables -t nat -A PREROUTING -i "$WIFI_INTERFACE" -j NAT_DNS_HIJACK6
 
-            ip6tables -t nat -A OUTPUT -p udp --dport 53 -m owner --uid-owner 0 --gid-owner 3005 -j RETURN
-            ip6tables -t nat -A OUTPUT -j NAT_DNS_HIJACK6
+                ip6tables -t nat -A OUTPUT -p udp --dport 53 -m owner --uid-owner 0 --gid-owner 3005 -j RETURN
+                ip6tables -t nat -A OUTPUT -j NAT_DNS_HIJACK6
+            fi
             ;;
     esac
 
@@ -504,7 +550,7 @@ cleanup_tproxy_chain4() {
     done
 
     if [ "$DNS_HIJACK_ENABLE" -eq 2 ]; then
-        iptables -t nat -D PREROUTING -i "$MOBILE_INTERFACE" -j NAT_DNS_HIJACK 
+        iptables -t nat -D PREROUTING -i "$MOBILE_INTERFACE" -j NAT_DNS_HIJACK
         iptables -t nat -D PREROUTING -i "$WIFI_INTERFACE" -j NAT_DNS_HIJACK
         iptables -t nat -D OUTPUT -p udp --dport 53 -m owner --uid-owner 0 --gid-owner 3005 -j RETURN
         iptables -t nat -D OUTPUT -j NAT_DNS_HIJACK
@@ -613,4 +659,5 @@ if [ -z "${main_cmd:-}" ]; then
     exit 1
 fi
 
+validate_user_group
 main "$main_cmd"
