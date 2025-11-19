@@ -52,6 +52,25 @@ BYPASS_APPS_LIST=""
 APP_PROXY_MODE="blacklist"
 # "blacklist" 或 "whitelist"
 
+# CN IP 绕过配置
+BYPASS_CN_IP=0
+# CN IP 列表文件路径（相对路径为脚本所在目录）
+CN_IP_FILE="cn.zone"
+CN_IPV6_FILE="cn_ipv6.zone"
+# CN IP 源 URL
+CN_IP_URL="https://raw.githubusercontent.com/Hackl0us/GeoIP2-CN/release/CN-ip-cidr.txt"
+CN_IPV6_URL="https://ispip.clang.cn/all_cn_ipv6.txt"
+
+# MAC 地址黑白名单配置（热点模式）
+MAC_FILTER_ENABLE=0
+# MAC 地址黑白名单列表（使用空格分隔MAC地址）
+PROXY_MACS_LIST=""
+# 示例: "AA:BB:CC:DD:EE:FF 11:22:33:44:55:66"
+BYPASS_MACS_LIST=""
+# 示例: "FF:EE:DD:CC:BB:AA"
+MAC_PROXY_MODE="blacklist"
+# "blacklist" 或 "whitelist"
+
 # Dry-run 模式（默认关闭）
 DRY_RUN=0
 
@@ -77,7 +96,7 @@ log() {
 # 检查依赖
 check_dependencies() {
     missing=()
-    required_commands=(busybox ip iptables)
+    required_commands=(ip iptables curl)
 
     for cmd in "${required_commands[@]}"; do
         if ! command -v "$cmd" > /dev/null 2>&1; then
@@ -284,10 +303,117 @@ safe_chain_create6() {
     ip6tables -t "$table" -F "$chain"
 }
 
+# 下载中国大陆 IP 列表（使用 curl）
+download_cn_ip_list() {
+    if [ "$BYPASS_CN_IP" -eq 0 ]; then
+        return 0
+    fi
+
+    log Info "Checking/Downloading China mainland IP list to $CN_IP_FILE"
+
+    # 如果文件不存在或超过7天，则重新下载
+    if [ ! -f "$CN_IP_FILE" ] || [ "$(find "$CN_IP_FILE" -mtime +7 2>/dev/null)" ]; then
+        log Debug "Fetching latest China IP list from $CN_IP_URL..."
+        if ! curl -fsSL --connect-timeout 10 --retry 3 \
+            "$CN_IP_URL" \
+            -o "$CN_IP_FILE.tmp"; then
+            log Error "Failed to download China IP list"
+            rm -f "$CN_IP_FILE.tmp"
+            return 1
+        fi
+        mv "$CN_IP_FILE.tmp" "$CN_IP_FILE"
+        log Info "China IP list saved to $CN_IP_FILE"
+    else
+        log Debug "Using existing China IP list: $CN_IP_FILE"
+    fi
+
+    # 下载 IPv6
+    if [ "$PROXY_IPV6" -eq 1 ]; then
+        log Info "Checking/Downloading China mainland IPv6 list to $CN_IPV6_FILE"
+
+        if [ ! -f "$CN_IPV6_FILE" ] || [ "$(find "$CN_IPV6_FILE" -mtime +7 2>/dev/null)" ]; then
+            log Debug "Fetching latest China IPv6 list from $CN_IPV6_URL..."
+            if ! curl -fsSL --connect-timeout 10 --retry 3 \
+                "$CN_IPV6_URL" \
+                -o "$CN_IPV6_FILE.tmp"; then
+                log Error "Failed to download China IPv6 list"
+                rm -f "$CN_IPV6_FILE.tmp"
+                return 1
+            fi
+            mv "$CN_IPV6_FILE.tmp" "$CN_IPV6_FILE"
+            log Info "China IPv6 list saved to $CN_IPV6_FILE"
+        else
+            log Debug "Using existing China IPv6 list: $CN_IPV6_FILE"
+        fi
+    fi
+}
+
+# 创建 ipset 集合（用于 BYPASS_IP 规则）
+setup_cn_ipset() {
+    if [ "$BYPASS_CN_IP" -eq 0 ]; then
+        return 0
+    fi
+
+    if ! command -v ipset > /dev/null 2>&1; then
+        log Error "ipset not found. Cannot bypass CN IPs."
+        return 1
+    fi
+
+    log Info "Setting up ipset for China mainland IPs"
+
+    # 删除旧集合（忽略错误）
+    ipset destroy cnip 2>/dev/null || true
+    ipset destroy cnip6 2>/dev/null || true
+
+    # 创建 IPv4 hash:net 类型的 ipset
+    if ! ipset create cnip hash:net family inet hashsize 8192 maxelem 65536; then
+        log Error "Failed to create ipset 'cnip'"
+        return 1
+    fi
+
+    # 批量添加 IPv4 CIDR
+    if [ -f "$CN_IP_FILE" ]; then
+        while IFS= read -r cidr; do
+            # 跳过空行和注释
+            case "$cidr" in
+                '' | \#*) continue ;;
+            esac
+            # 验证是否为合法 IPv4 CIDR
+            if echo "$cidr" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]+$'; then
+                ipset add cnip "$cidr" 2>/dev/null || true
+            fi
+        done < "$CN_IP_FILE"
+    fi
+
+    log Info "ipset 'cnip' loaded with China mainland IPs"
+
+    # 创建 IPv6 hash:net 类型的 ipset
+    if [ "$PROXY_IPV6" -eq 1 ] && [ -f "$CN_IPV6_FILE" ]; then
+        if ! ipset create cnip6 hash:net family inet6 hashsize 4096 maxelem 8192; then
+            log Error "Failed to create ipset 'cnip6'"
+            return 1
+        fi
+
+        # 批量添加 IPv6 CIDR
+        while IFS= read -r cidr; do
+            # 跳过空行和注释
+            case "$cidr" in
+                '' | \#*) continue ;;
+            esac
+            # 验证是否为合法 IPv6 CIDR
+            if echo "$cidr" | grep -qE '^([0-9a-fA-F:]+:+[0-9a-fA-F]*)/[0-9]+$'; then
+                ipset add cnip6 "$cidr" 2>/dev/null || true
+            fi
+        done < "$CN_IPV6_FILE"
+
+        log Info "ipset 'cnip6' loaded with China mainland IPv6 IPs"
+    fi
+}
+
 setup_tproxy_chain4() {
     log Info "Setting up TPROXY chains for IPv4"
 
-    for c in PROXY_PREROUTING PROXY_OUTPUT BYPASS_IP BYPASS_INTERFACE PROXY_INTERFACE DNS_HIJACK_PRE DNS_HIJACK_OUT APP_CHAIN; do
+    for c in PROXY_PREROUTING PROXY_OUTPUT BYPASS_IP BYPASS_INTERFACE PROXY_INTERFACE DNS_HIJACK_PRE DNS_HIJACK_OUT APP_CHAIN MAC_CHAIN; do
         safe_chain_create mangle "$c"
     done
 
@@ -302,6 +428,7 @@ setup_tproxy_chain4() {
 
     iptables -t mangle -A PROXY_PREROUTING -j BYPASS_IP
     iptables -t mangle -A PROXY_PREROUTING -j PROXY_INTERFACE
+    iptables -t mangle -A PROXY_PREROUTING -j MAC_CHAIN
     iptables -t mangle -A PROXY_PREROUTING -j DNS_HIJACK_PRE
 
     iptables -t mangle -A PROXY_OUTPUT -j BYPASS_IP
@@ -321,6 +448,16 @@ setup_tproxy_chain4() {
         iptables -t mangle -A BYPASS_IP -d "$subnet4" -p udp ! --dport 53 -j ACCEPT
         iptables -t mangle -A BYPASS_IP -d "$subnet4" ! -p udp -j ACCEPT
     done
+
+    # 绕过中国大陆 IP（如果启用）
+    if [ "$BYPASS_CN_IP" -eq 1 ]; then
+        if command -v ipset > /dev/null 2>&1 && ipset list cnip > /dev/null 2>&1; then
+            iptables -t mangle -A BYPASS_IP -m set --match-set cnip dst -j ACCEPT
+            log Debug "Added ipset-based CN IP bypass rule"
+        else
+            log Warn "ipset 'cnip' not available, skipping CN IP bypass"
+        fi
+    fi
 
     # 处理接口
     iptables -t mangle -A PROXY_INTERFACE -i lo -j RETURN
@@ -361,6 +498,34 @@ setup_tproxy_chain4() {
         log Debug "USB interface $USB_INTERFACE will bypass proxy"
     fi
     iptables -t mangle -A PROXY_INTERFACE -j ACCEPT
+
+    # 处理 MAC 地址黑白名单（热点模式）
+    if [ "$MAC_FILTER_ENABLE" -eq 1 ] && [ -n "$HOTSPOT_INTERFACE" ]; then
+        case "$MAC_PROXY_MODE" in
+            blacklist)
+                if [ -n "$BYPASS_MACS_LIST" ]; then
+                    for mac in $BYPASS_MACS_LIST; do
+                        [ -n "$mac" ] && {
+                            iptables -t mangle -A MAC_CHAIN -m mac --mac-source "$mac" -i "$HOTSPOT_INTERFACE" -j ACCEPT
+                            log Debug "Added MAC bypass rule for $mac"
+                        }
+                    done
+                fi
+                iptables -t mangle -A MAC_CHAIN -i "$HOTSPOT_INTERFACE" -j RETURN
+                ;;
+            whitelist)
+                if [ -n "$PROXY_MACS_LIST" ]; then
+                    for mac in $PROXY_MACS_LIST; do
+                        [ -n "$mac" ] && {
+                            iptables -t mangle -A MAC_CHAIN -m mac --mac-source "$mac" -i "$HOTSPOT_INTERFACE" -j RETURN
+                            log Debug "Added MAC proxy rule for $mac"
+                        }
+                    done
+                fi
+                iptables -t mangle -A MAC_CHAIN -i "$HOTSPOT_INTERFACE" -j ACCEPT
+                ;;
+        esac
+    fi
 
     # 绕过本机代理程序自身
     if check_kernel_feature "NETFILTER_XT_MATCH_OWNER"; then
@@ -437,7 +602,7 @@ setup_tproxy_chain4() {
 setup_redirect_chain4() {
     log Info "Setting up REDIRECT chains for IPv4"
 
-    for c in PROXY_PREROUTING PROXY_OUTPUT BYPASS_IP BYPASS_INTERFACE PROXY_INTERFACE DNS_HIJACK_PRE DNS_HIJACK_OUT APP_CHAIN; do
+    for c in PROXY_PREROUTING PROXY_OUTPUT BYPASS_IP BYPASS_INTERFACE PROXY_INTERFACE DNS_HIJACK_PRE DNS_HIJACK_OUT APP_CHAIN MAC_CHAIN; do
         safe_chain_create nat "$c"
     done
 
@@ -447,6 +612,7 @@ setup_redirect_chain4() {
 
     iptables -t nat -A PROXY_PREROUTING -j BYPASS_IP
     iptables -t nat -A PROXY_PREROUTING -j PROXY_INTERFACE
+    iptables -t nat -A PROXY_PREROUTING -j MAC_CHAIN
     iptables -t nat -A PROXY_PREROUTING -j DNS_HIJACK_PRE
 
     iptables -t nat -A PROXY_OUTPUT -j BYPASS_IP
@@ -462,6 +628,16 @@ setup_redirect_chain4() {
         iptables -t nat -A BYPASS_IP -d "$subnet4" -p udp ! --dport 53 -j ACCEPT
         iptables -t nat -A BYPASS_IP -d "$subnet4" ! -p udp -j ACCEPT
     done
+
+    # 绕过中国大陆 IP（如果启用）
+    if [ "$BYPASS_CN_IP" -eq 1 ]; then
+        if command -v ipset > /dev/null 2>&1 && ipset list cnip > /dev/null 2>&1; then
+            iptables -t nat -A BYPASS_IP -m set --match-set cnip dst -j ACCEPT
+            log Debug "Added ipset-based CN IP bypass rule (REDIRECT mode)"
+        else
+            log Warn "ipset 'cnip' not available, skipping CN IP bypass"
+        fi
+    fi
 
     # 处理接口
     iptables -t nat -A PROXY_INTERFACE -i lo -j RETURN
@@ -502,6 +678,34 @@ setup_redirect_chain4() {
         log Debug "USB interface $USB_INTERFACE will bypass proxy"
     fi
     iptables -t nat -A PROXY_INTERFACE -j ACCEPT
+
+    # 处理 MAC 地址黑白名单（热点模式）
+    if [ "$MAC_FILTER_ENABLE" -eq 1 ] && [ -n "$HOTSPOT_INTERFACE" ]; then
+        case "$MAC_PROXY_MODE" in
+            blacklist)
+                if [ -n "$BYPASS_MACS_LIST" ]; then
+                    for mac in $BYPASS_MACS_LIST; do
+                        [ -n "$mac" ] && {
+                            iptables -t nat -A MAC_CHAIN -m mac --mac-source "$mac" -i "$HOTSPOT_INTERFACE" -j ACCEPT
+                            log Debug "Added MAC bypass rule for $mac"
+                        }
+                    done
+                fi
+                iptables -t nat -A MAC_CHAIN -i "$HOTSPOT_INTERFACE" -j RETURN
+                ;;
+            whitelist)
+                if [ -n "$PROXY_MACS_LIST" ]; then
+                    for mac in $PROXY_MACS_LIST; do
+                        [ -n "$mac" ] && {
+                            iptables -t nat -A MAC_CHAIN -m mac --mac-source "$mac" -i "$HOTSPOT_INTERFACE" -j RETURN
+                            log Debug "Added MAC proxy rule for $mac"
+                        }
+                    done
+                fi
+                iptables -t nat -A MAC_CHAIN -i "$HOTSPOT_INTERFACE" -j ACCEPT
+                ;;
+        esac
+    fi
 
     # 绕过本机代理程序自身
     if check_kernel_feature "NETFILTER_XT_MATCH_OWNER"; then
@@ -563,7 +767,7 @@ setup_redirect_chain4() {
 setup_tproxy_chain6() {
     log Info "Setting up TPROXY chains for IPv6"
 
-    for c6 in PROXY_PREROUTING6 PROXY_OUTPUT6 BYPASS_IP6 BYPASS_INTERFACE6 PROXY_INTERFACE6 DNS_HIJACK_PRE6 DNS_HIJACK_OUT6 APP_CHAIN6; do
+    for c6 in PROXY_PREROUTING6 PROXY_OUTPUT6 BYPASS_IP6 BYPASS_INTERFACE6 PROXY_INTERFACE6 DNS_HIJACK_PRE6 DNS_HIJACK_OUT6 APP_CHAIN6 MAC_CHAIN6; do
         safe_chain_create6 mangle "$c6"
     done
 
@@ -578,6 +782,7 @@ setup_tproxy_chain6() {
 
     ip6tables -t mangle -A PROXY_PREROUTING6 -j BYPASS_IP6
     ip6tables -t mangle -A PROXY_PREROUTING6 -j PROXY_INTERFACE6
+    ip6tables -t mangle -A PROXY_PREROUTING6 -j MAC_CHAIN6
     ip6tables -t mangle -A PROXY_PREROUTING6 -j DNS_HIJACK_PRE6
 
     ip6tables -t mangle -A PROXY_OUTPUT6 -j BYPASS_IP6
@@ -597,6 +802,16 @@ setup_tproxy_chain6() {
         ip6tables -t mangle -A BYPASS_IP6 -d "$subnet6" -p udp ! --dport 53 -j ACCEPT
         ip6tables -t mangle -A BYPASS_IP6 -d "$subnet6" ! -p udp -j ACCEPT
     done
+
+    # 绕过中国大陆 IPv6（如果启用）
+    if [ "$BYPASS_CN_IP" -eq 1 ]; then
+        if command -v ipset > /dev/null 2>&1 && ipset list cnip6 > /dev/null 2>&1; then
+            ip6tables -t mangle -A BYPASS_IP6 -m set --match-set cnip6 dst -j ACCEPT
+            log Debug "Added ipset-based CN IPv6 bypass rule"
+        else
+            log Warn "ipset 'cnip6' not available, skipping CN IPv6 bypass"
+        fi
+    fi
 
     # 处理接口
     ip6tables -t mangle -A PROXY_INTERFACE6 -i lo -j RETURN
@@ -634,6 +849,34 @@ setup_tproxy_chain6() {
         log Debug "IPv6 USB interface $USB_INTERFACE will bypass proxy"
     fi
     ip6tables -t mangle -A PROXY_INTERFACE6 -j ACCEPT
+
+    # 处理 MAC 地址黑白名单（热点模式）
+    if [ "$MAC_FILTER_ENABLE" -eq 1 ] && [ -n "$HOTSPOT_INTERFACE" ]; then
+        case "$MAC_PROXY_MODE" in
+            blacklist)
+                if [ -n "$BYPASS_MACS_LIST" ]; then
+                    for mac in $BYPASS_MACS_LIST; do
+                        [ -n "$mac" ] && {
+                            ip6tables -t mangle -A MAC_CHAIN6 -m mac --mac-source "$mac" -i "$HOTSPOT_INTERFACE" -j ACCEPT
+                            log Debug "Added IPv6 MAC bypass rule for $mac"
+                        }
+                    done
+                fi
+                ip6tables -t mangle -A MAC_CHAIN6 -i "$HOTSPOT_INTERFACE" -j RETURN
+                ;;
+            whitelist)
+                if [ -n "$PROXY_MACS_LIST" ]; then
+                    for mac in $PROXY_MACS_LIST; do
+                        [ -n "$mac" ] && {
+                            ip6tables -t mangle -A MAC_CHAIN6 -m mac --mac-source "$mac" -i "$HOTSPOT_INTERFACE" -j RETURN
+                            log Debug "Added IPv6 MAC proxy rule for $mac"
+                        }
+                    done
+                fi
+                ip6tables -t mangle -A MAC_CHAIN6 -i "$HOTSPOT_INTERFACE" -j ACCEPT
+                ;;
+        esac
+    fi
 
     # 绕过本机代理程序自身
     if check_kernel_feature "NETFILTER_XT_MATCH_OWNER"; then
@@ -718,7 +961,7 @@ setup_redirect_chain6() {
         return
     fi
 
-    for c6 in PROXY_PREROUTING6 PROXY_OUTPUT6 BYPASS_IP6 BYPASS_INTERFACE6 PROXY_INTERFACE6 DNS_HIJACK_PRE6 DNS_HIJACK_OUT6 APP_CHAIN6; do
+    for c6 in PROXY_PREROUTING6 PROXY_OUTPUT6 BYPASS_IP6 BYPASS_INTERFACE6 PROXY_INTERFACE6 DNS_HIJACK_PRE6 DNS_HIJACK_OUT6 APP_CHAIN6 MAC_CHAIN6; do
         safe_chain_create6 nat "$c6"
     done
 
@@ -728,6 +971,7 @@ setup_redirect_chain6() {
 
     ip6tables -t nat -A PROXY_PREROUTING6 -j BYPASS_IP6
     ip6tables -t nat -A PROXY_PREROUTING6 -j PROXY_INTERFACE6
+    ip6tables -t nat -A PROXY_PREROUTING6 -j MAC_CHAIN6
     ip6tables -t nat -A PROXY_PREROUTING6 -j DNS_HIJACK_PRE6
 
     ip6tables -t nat -A PROXY_OUTPUT6 -j BYPASS_IP6
@@ -743,6 +987,16 @@ setup_redirect_chain6() {
         ip6tables -t nat -A BYPASS_IP6 -d "$subnet6" -p udp ! --dport 53 -j ACCEPT
         ip6tables -t nat -A BYPASS_IP6 -d "$subnet6" ! -p udp -j ACCEPT
     done
+
+    # 绕过中国大陆 IPv6（如果启用）
+    if [ "$BYPASS_CN_IP" -eq 1 ]; then
+        if command -v ipset > /dev/null 2>&1 && ipset list cnip6 > /dev/null 2>&1; then
+            ip6tables -t nat -A BYPASS_IP6 -m set --match-set cnip6 dst -j ACCEPT
+            log Debug "Added ipset-based CN IPv6 bypass rule (REDIRECT mode)"
+        else
+            log Warn "ipset 'cnip6' not available, skipping CN IPv6 bypass"
+        fi
+    fi
 
     # 处理接口
     ip6tables -t nat -A PROXY_INTERFACE6 -i lo -j RETURN
@@ -783,6 +1037,34 @@ setup_redirect_chain6() {
         log Debug "IPv6 USB interface $USB_INTERFACE will bypass proxy"
     fi
     ip6tables -t nat -A PROXY_INTERFACE6 -j ACCEPT
+
+    # 处理 MAC 地址黑白名单（热点模式）
+    if [ "$MAC_FILTER_ENABLE" -eq 1 ] && [ -n "$HOTSPOT_INTERFACE" ]; then
+        case "$MAC_PROXY_MODE" in
+            blacklist)
+                if [ -n "$BYPASS_MACS_LIST" ]; then
+                    for mac in $BYPASS_MACS_LIST; do
+                        [ -n "$mac" ] && {
+                            ip6tables -t nat -A MAC_CHAIN6 -m mac --mac-source "$mac" -i "$HOTSPOT_INTERFACE" -j ACCEPT
+                            log Debug "Added IPv6 MAC bypass rule for $mac"
+                        }
+                    done
+                fi
+                ip6tables -t nat -A MAC_CHAIN6 -i "$HOTSPOT_INTERFACE" -j RETURN
+                ;;
+            whitelist)
+                if [ -n "$PROXY_MACS_LIST" ]; then
+                    for mac in $PROXY_MACS_LIST; do
+                        [ -n "$mac" ] && {
+                            ip6tables -t nat -A MAC_CHAIN6 -m mac --mac-source "$mac" -i "$HOTSPOT_INTERFACE" -j RETURN
+                            log Debug "Added IPv6 MAC proxy rule for $mac"
+                        }
+                    done
+                fi
+                ip6tables -t nat -A MAC_CHAIN6 -i "$HOTSPOT_INTERFACE" -j ACCEPT
+                ;;
+        esac
+    fi
 
     # 绕过本机代理程序自身
     if check_kernel_feature "NETFILTER_XT_MATCH_OWNER"; then
@@ -894,6 +1176,7 @@ cleanup_tproxy_chain4() {
 
     iptables -t mangle -D PROXY_PREROUTING -j BYPASS_IP 2> /dev/null || true
     iptables -t mangle -D PROXY_PREROUTING -j PROXY_INTERFACE 2> /dev/null || true
+    iptables -t mangle -D PROXY_PREROUTING -j MAC_CHAIN 2> /dev/null || true
     iptables -t mangle -D PROXY_PREROUTING -j DNS_HIJACK_PRE 2> /dev/null || true
 
     iptables -t mangle -D PROXY_OUTPUT -j BYPASS_IP 2> /dev/null || true
@@ -910,7 +1193,7 @@ cleanup_tproxy_chain4() {
         iptables -t mangle -D OUTPUT -p udp -j PROXY_OUTPUT 2> /dev/null || true
     fi
 
-    for c in PROXY_PREROUTING PROXY_OUTPUT BYPASS_IP BYPASS_INTERFACE PROXY_INTERFACE DNS_HIJACK_PRE DNS_HIJACK_OUT APP_CHAIN; do
+    for c in PROXY_PREROUTING PROXY_OUTPUT BYPASS_IP BYPASS_INTERFACE PROXY_INTERFACE DNS_HIJACK_PRE DNS_HIJACK_OUT APP_CHAIN MAC_CHAIN; do
         iptables -t mangle -F "$c" 2> /dev/null || true
         iptables -t mangle -X "$c" 2> /dev/null || true
     done
@@ -931,6 +1214,7 @@ cleanup_tproxy_chain6() {
 
     ip6tables -t mangle -D PROXY_PREROUTING6 -j BYPASS_IP6 2> /dev/null || true
     ip6tables -t mangle -D PROXY_PREROUTING6 -j PROXY_INTERFACE6 2> /dev/null || true
+    ip6tables -t mangle -D PROXY_PREROUTING6 -j MAC_CHAIN6 2> /dev/null || true
     ip6tables -t mangle -D PROXY_PREROUTING6 -j DNS_HIJACK_PRE6 2> /dev/null || true
 
     ip6tables -t mangle -D PROXY_OUTPUT6 -j BYPASS_IP6 2> /dev/null || true
@@ -947,7 +1231,7 @@ cleanup_tproxy_chain6() {
         ip6tables -t mangle -D OUTPUT -p udp -j PROXY_OUTPUT6 2> /dev/null || true
     fi
 
-    for c6 in PROXY_PREROUTING6 PROXY_OUTPUT6 BYPASS_IP6 BYPASS_INTERFACE6 PROXY_INTERFACE6 DNS_HIJACK_PRE6 DNS_HIJACK_OUT6 APP_CHAIN6; do
+    for c6 in PROXY_PREROUTING6 PROXY_OUTPUT6 BYPASS_IP6 BYPASS_INTERFACE6 PROXY_INTERFACE6 DNS_HIJACK_PRE6 DNS_HIJACK_OUT6 APP_CHAIN6 MAC_CHAIN6; do
         ip6tables -t mangle -F "$c6" 2> /dev/null || true
         ip6tables -t mangle -X "$c6" 2> /dev/null || true
     done
@@ -968,6 +1252,7 @@ cleanup_redirect_chain4() {
 
     iptables -t nat -D PROXY_PREROUTING -j BYPASS_IP 2> /dev/null || true
     iptables -t nat -D PROXY_PREROUTING -j PROXY_INTERFACE 2> /dev/null || true
+    iptables -t nat -D PROXY_PREROUTING -j MAC_CHAIN 2> /dev/null || true
     iptables -t nat -D PROXY_PREROUTING -j DNS_HIJACK_PRE 2> /dev/null || true
 
     iptables -t nat -D PROXY_OUTPUT -j BYPASS_IP 2> /dev/null || true
@@ -978,7 +1263,7 @@ cleanup_redirect_chain4() {
     iptables -t nat -D PREROUTING -p tcp -j PROXY_PREROUTING 2> /dev/null || true
     iptables -t nat -D OUTPUT -p tcp -j PROXY_OUTPUT 2> /dev/null || true
 
-    for c in PROXY_PREROUTING PROXY_OUTPUT BYPASS_IP BYPASS_INTERFACE PROXY_INTERFACE DNS_HIJACK_PRE DNS_HIJACK_OUT APP_CHAIN; do
+    for c in PROXY_PREROUTING PROXY_OUTPUT BYPASS_IP BYPASS_INTERFACE PROXY_INTERFACE DNS_HIJACK_PRE DNS_HIJACK_OUT APP_CHAIN MAC_CHAIN; do
         iptables -t nat -F "$c" 2> /dev/null || true
         iptables -t nat -X "$c" 2> /dev/null || true
     done
@@ -995,6 +1280,7 @@ cleanup_redirect_chain6() {
 
     ip6tables -t nat -D PROXY_PREROUTING6 -j BYPASS_IP6 2> /dev/null || true
     ip6tables -t nat -D PROXY_PREROUTING6 -j PROXY_INTERFACE6 2> /dev/null || true
+    ip6tables -t nat -D PROXY_PREROUTING6 -j MAC_CHAIN6 2> /dev/null || true
     ip6tables -t nat -D PROXY_PREROUTING6 -j DNS_HIJACK_PRE6 2> /dev/null || true
 
     ip6tables -t nat -D PROXY_OUTPUT6 -j BYPASS_IP6 2> /dev/null || true
@@ -1005,11 +1291,19 @@ cleanup_redirect_chain6() {
     ip6tables -t nat -D PREROUTING -p tcp -j PROXY_PREROUTING6 2> /dev/null || true
     ip6tables -t nat -D OUTPUT -p tcp -j PROXY_OUTPUT6 2> /dev/null || true
 
-    for c6 in PROXY_PREROUTING6 PROXY_OUTPUT6 BYPASS_IP6 BYPASS_INTERFACE6 PROXY_INTERFACE6 DNS_HIJACK_PRE6 DNS_HIJACK_OUT6 APP_CHAIN6; do
+    for c6 in PROXY_PREROUTING6 PROXY_OUTPUT6 BYPASS_IP6 BYPASS_INTERFACE6 PROXY_INTERFACE6 DNS_HIJACK_PRE6 DNS_HIJACK_OUT6 APP_CHAIN6 MAC_CHAIN6; do
         ip6tables -t nat -F "$c6" 2> /dev/null || true
         ip6tables -t nat -X "$c6" 2> /dev/null || true
     done
     log Info "REDIRECT chains for IPv6 cleanup completed"
+}
+
+# 清理 ipset
+cleanup_ipset() {
+    if [ "$BYPASS_CN_IP" -eq 1 ]; then
+        ipset destroy cnip 2>/dev/null && log Debug "Destroyed ipset 'cnip'"
+        ipset destroy cnip6 2>/dev/null && log Debug "Destroyed ipset 'cnip6'"
+    fi
 }
 
 # 主流程
@@ -1018,6 +1312,17 @@ main() {
 
     case "$cmd" in
         start)
+            if [ "$BYPASS_CN_IP" -eq 1 ]; then
+                # 检查内核支持和依赖
+                if ! check_kernel_feature "IP_SET" || ! check_kernel_feature "NETFILTER_XT_SET"; then
+                    log Error "Kernel does not support ipset (CONFIG_IP_SET, CONFIG_NETFILTER_XT_SET). Cannot bypass CN IPs."
+                    BYPASS_CN_IP=0
+                else
+                    download_cn_ip_list || log Warn "Failed to download CN IP list, continuing without it"
+                    setup_cn_ipset || log Warn "Failed to setup ipset, CN bypass disabled"
+                fi
+            fi
+
             if check_tproxy_support; then
                 log Info "Kernel supports TPROXY, using TPROXY mode"
                 setup_tproxy_chain4
@@ -1050,6 +1355,7 @@ main() {
                     cleanup_redirect_chain6
                 fi
             fi
+            cleanup_ipset
             ;;
         restart)
             if check_tproxy_support; then
@@ -1067,7 +1373,18 @@ main() {
                     cleanup_redirect_chain6
                 fi
             fi
+            cleanup_ipset
             sleep 2s
+            if [ "$BYPASS_CN_IP" -eq 1 ]; then
+                # 检查内核支持和依赖
+                if ! check_kernel_feature "IP_SET" || ! check_kernel_feature "NETFILTER_XT_SET"; then
+                    log Error "Kernel does not support ipset (CONFIG_IP_SET, CONFIG_NETFILTER_XT_SET). Cannot bypass CN IPs."
+                    BYPASS_CN_IP=0
+                else
+                    download_cn_ip_list || log Warn "Failed to download CN IP list, continuing without it"
+                    setup_cn_ipset || log Warn "Failed to setup ipset, CN bypass disabled"
+                fi
+            fi
             if check_tproxy_support; then
                 log Info "Setting up TPROXY chains after restart"
                 setup_tproxy_chain4
