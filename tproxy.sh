@@ -1,33 +1,33 @@
 #!/system/bin/sh
 
-# 配置项（按需修改）
+# Configuration (modify as needed)
 
-# 代理软件配置
-# 代理运行用户与用户组
+# Proxy core configuration
+# Proxy running user and group
 CORE_USER_GROUP="root:net_admin"
-# 代理流量标记
-ROUTING_MARK="6666"
-# 代理端口（透明代理程序监听端口）
+# Proxy traffic mark
+ROUTING_MARK=""
+# Proxy ports (transparent proxy listening ports)
 PROXY_TCP_PORT="1536"
 PROXY_UDP_PORT="1536"
 
-# DNS 配置
-# DNS 拦截方式（0:关闭，1:tproxy，2:redirect）
+# DNS configuration
+# DNS hijack method (0: disabled, 1: tproxy, 2: redirect)
 DNS_HIJACK_ENABLE=1
-# DNS 监听端口
+# DNS listening port
 DNS_PORT="1053"
 
-# 接口定义
-# 数据 接口
+# Interface definitions
+# Mobile data interface
 MOBILE_INTERFACE="rmnet_data+"
-# WiFi 接口
+# WiFi interface
 WIFI_INTERFACE="wlan0"
-# 热点 接口
+# Hotspot interface
 HOTSPOT_INTERFACE="wlan2"
-# USB 共享接口
+# USB tethering interface
 USB_INTERFACE="rndis+"
 
-# 代理开关
+# Proxy switches
 PROXY_MOBILE=1
 PROXY_WIFI=1
 PROXY_HOTSPOT=0
@@ -36,44 +36,157 @@ PROXY_TCP=1
 PROXY_UDP=1
 PROXY_IPV6=0
 
-# mark 值
+# Mark values
 MARK_VALUE=20
 MARK_VALUE6=25
 
-# 路由表 id
+# Routing table ID
 TABLE_ID=2025
 
-# 分应用代理（使用空格分隔包名并支持 user:package）
-APP_PROXY_ENABLE=1
+# Per-app proxy (use space to separate package names, supports user:package format)
+APP_PROXY_ENABLE=0
 PROXY_APPS_LIST=""
-# 示例: "com.example.app com.other"
+# Example: "com.example.app com.other"
 BYPASS_APPS_LIST=""
-# 示例: "com.android.shell"
+# Example: "com.android.shell"
 APP_PROXY_MODE="blacklist"
-# "blacklist" 或 "whitelist"
+# "blacklist" or "whitelist"
 
-# CN IP 绕过配置
+# CN IP bypass configuration
 BYPASS_CN_IP=0
-# CN IP 列表文件路径（相对路径为脚本所在目录）
+# CN IP list file paths (relative to script directory)
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 CN_IP_FILE="${SCRIPT_DIR}/cn.zone"
 CN_IPV6_FILE="${SCRIPT_DIR}/cn_ipv6.zone"
-# CN IP 源 URL
+# CN IP source URLs
 CN_IP_URL="https://raw.githubusercontent.com/Hackl0us/GeoIP2-CN/release/CN-ip-cidr.txt"
 CN_IPV6_URL="https://ispip.clang.cn/all_cn_ipv6.txt"
 
-# MAC 地址黑白名单配置（热点模式）
+# MAC address blacklist/whitelist configuration (hotspot mode)
 MAC_FILTER_ENABLE=0
-# MAC 地址黑白名单列表（使用空格分隔MAC地址）
+# MAC address blacklist/whitelist (use space to separate MAC addresses)
 PROXY_MACS_LIST=""
-# 示例: "AA:BB:CC:DD:EE:FF 11:22:33:44:55:66"
+# Example: "AA:BB:CC:DD:EE:FF 11:22:33:44:55:66"
 BYPASS_MACS_LIST=""
-# 示例: "FF:EE:DD:CC:BB:AA"
+# Example: "FF:EE:DD:CC:BB:AA"
 MAC_PROXY_MODE="blacklist"
-# "blacklist" 或 "whitelist"
+# "blacklist" or "whitelist"
 
-# Dry-run 模式（默认关闭）
+# Dry-run mode (disabled by default)
 DRY_RUN=0
+
+# Load configuration with default values
+load_config() {
+    log Info "Loading configuration with defaults..."
+
+    # Proxy core configuration
+    CORE_USER_GROUP="${CORE_USER_GROUP:-root:net_admin}"
+    log Info "CORE_USER_GROUP: $CORE_USER_GROUP"
+
+    ROUTING_MARK="${ROUTING_MARK:-}"
+    log Info "ROUTING_MARK: $ROUTING_MARK"
+
+    PROXY_TCP_PORT="${PROXY_TCP_PORT:-1536}"
+    log Info "PROXY_TCP_PORT: $PROXY_TCP_PORT"
+
+    PROXY_UDP_PORT="${PROXY_UDP_PORT:-1536}"
+    log Info "PROXY_UDP_PORT: $PROXY_UDP_PORT"
+
+    # DNS configuration
+    DNS_HIJACK_ENABLE="${DNS_HIJACK_ENABLE:-1}"
+    log Info "DNS_HIJACK_ENABLE: $DNS_HIJACK_ENABLE"
+
+    DNS_PORT="${DNS_PORT:-1053}"
+    log Info "DNS_PORT: $DNS_PORT"
+
+    # Interface definitions
+    MOBILE_INTERFACE="${MOBILE_INTERFACE:-rmnet_data+}"
+    log Info "MOBILE_INTERFACE: $MOBILE_INTERFACE"
+
+    WIFI_INTERFACE="${WIFI_INTERFACE:-wlan0}"
+    log Info "WIFI_INTERFACE: $WIFI_INTERFACE"
+
+    HOTSPOT_INTERFACE="${HOTSPOT_INTERFACE:-wlan2}"
+    log Info "HOTSPOT_INTERFACE: $HOTSPOT_INTERFACE"
+
+    USB_INTERFACE="${USB_INTERFACE:-rndis+}"
+    log Info "USB_INTERFACE: $USB_INTERFACE"
+
+    # Proxy switches
+    PROXY_MOBILE="${PROXY_MOBILE:-1}"
+    log Info "PROXY_MOBILE: $PROXY_MOBILE"
+
+    PROXY_WIFI="${PROXY_WIFI:-1}"
+    log Info "PROXY_WIFI: $PROXY_WIFI"
+
+    PROXY_HOTSPOT="${PROXY_HOTSPOT:-0}"
+    log Info "PROXY_HOTSPOT: $PROXY_HOTSPOT"
+
+    PROXY_USB="${PROXY_USB:-0}"
+    log Info "PROXY_USB: $PROXY_USB"
+
+    PROXY_TCP="${PROXY_TCP:-1}"
+    log Info "PROXY_TCP: $PROXY_TCP"
+
+    PROXY_UDP="${PROXY_UDP:-1}"
+    log Info "PROXY_UDP: $PROXY_UDP"
+
+    PROXY_IPV6="${PROXY_IPV6:-0}"
+    log Info "PROXY_IPV6: $PROXY_IPV6"
+
+    # Mark values
+    MARK_VALUE="${MARK_VALUE:-20}"
+    log Info "MARK_VALUE: $MARK_VALUE"
+
+    MARK_VALUE6="${MARK_VALUE6:-25}"
+    log Info "MARK_VALUE6: $MARK_VALUE6"
+
+    # Routing table ID
+    TABLE_ID="${TABLE_ID:-2025}"
+    log Info "TABLE_ID: $TABLE_ID"
+
+    # Per-app proxy
+    APP_PROXY_ENABLE="${APP_PROXY_ENABLE:-0}"
+    log Info "APP_PROXY_ENABLE: $APP_PROXY_ENABLE"
+
+    PROXY_APPS_LIST="${PROXY_APPS_LIST:-}"
+    log Info "PROXY_APPS_LIST: $PROXY_APPS_LIST"
+
+    BYPASS_APPS_LIST="${BYPASS_APPS_LIST:-}"
+    log Info "BYPASS_APPS_LIST: $BYPASS_APPS_LIST"
+
+    APP_PROXY_MODE="${APP_PROXY_MODE:-blacklist}"
+    log Info "APP_PROXY_MODE: $APP_PROXY_MODE"
+
+    # CN IP bypass
+    BYPASS_CN_IP="${BYPASS_CN_IP:-0}"
+    log Info "BYPASS_CN_IP: $BYPASS_CN_IP"
+
+    CN_IP_FILE="${CN_IP_FILE:-${SCRIPT_DIR}/cn.zone}"
+    log Info "CN_IP_FILE: $CN_IP_FILE"
+
+    CN_IPV6_FILE="${CN_IPV6_FILE:-${SCRIPT_DIR}/cn_ipv6.zone}"
+    log Info "CN_IPV6_FILE: $CN_IPV6_FILE"
+
+    # MAC address filtering
+    MAC_FILTER_ENABLE="${MAC_FILTER_ENABLE:-0}"
+    log Info "MAC_FILTER_ENABLE: $MAC_FILTER_ENABLE"
+
+    PROXY_MACS_LIST="${PROXY_MACS_LIST:-}"
+    log Info "PROXY_MACS_LIST: $PROXY_MACS_LIST"
+
+    BYPASS_MACS_LIST="${BYPASS_MACS_LIST:-}"
+    log Info "BYPASS_MACS_LIST: $BYPASS_MACS_LIST"
+
+    MAC_PROXY_MODE="${MAC_PROXY_MODE:-blacklist}"
+    log Info "MAC_PROXY_MODE: $MAC_PROXY_MODE"
+
+    # Dry-run mode
+    DRY_RUN="${DRY_RUN:-0}"
+    log Info "DRY_RUN: $DRY_RUN"
+
+    log Info "Configuration loading completed"
+}
 
 log() {
     level="$1"
@@ -257,6 +370,7 @@ get_package_uid() {
 
 find_packages_uid() {
     out=""
+    # shellcheck disable=SC2048
     for token in $*; do
         user_prefix=0
         package="$token"
@@ -454,12 +568,12 @@ setup_tproxy_chain4() {
         safe_chain_create mangle "$c"
     done
 
-    if [ "${PROXY_TCP:-1}" -eq 1 ]; then
+    if [ "$PROXY_TCP" -eq 1 ]; then
         iptables -t mangle -I PREROUTING -p tcp -j PROXY_PREROUTING
         iptables -t mangle -I OUTPUT -p tcp -j PROXY_OUTPUT
         log Info "Added TCP rules to PREROUTING and OUTPUT chains"
     fi
-    if [ "${PROXY_UDP:-1}" -eq 1 ]; then
+    if [ "$PROXY_UDP" -eq 1 ]; then
         iptables -t mangle -I PREROUTING -p udp -j PROXY_PREROUTING
         iptables -t mangle -I OUTPUT -p udp -j PROXY_OUTPUT
         log Info "Added UDP rules to PREROUTING and OUTPUT chains"
@@ -498,7 +612,7 @@ setup_tproxy_chain4() {
     fi
 
     iptables -t mangle -A PROXY_INTERFACE -i lo -j RETURN
-    if [ "${PROXY_MOBILE:-1}" -eq 1 ]; then
+    if [ "$PROXY_MOBILE" -eq 1 ]; then
         iptables -t mangle -A PROXY_INTERFACE -i "$MOBILE_INTERFACE" -j RETURN
         log Info "Mobile interface $MOBILE_INTERFACE will be proxied"
     else
@@ -506,7 +620,7 @@ setup_tproxy_chain4() {
         iptables -t mangle -A BYPASS_INTERFACE -o "$MOBILE_INTERFACE" -j ACCEPT
         log Info "Mobile interface $MOBILE_INTERFACE will bypass proxy"
     fi
-    if [ "${PROXY_WIFI:-1}" -eq 1 ]; then
+    if [ "$PROXY_WIFI" -eq 1 ]; then
         iptables -t mangle -A PROXY_INTERFACE -i "$WIFI_INTERFACE" -j RETURN
         log Info "WiFi interface $WIFI_INTERFACE will be proxied"
     else
@@ -514,7 +628,7 @@ setup_tproxy_chain4() {
         iptables -t mangle -A BYPASS_INTERFACE -o "$WIFI_INTERFACE" -j ACCEPT
         log Info "WiFi interface $WIFI_INTERFACE will bypass proxy"
     fi
-    if [ "${PROXY_HOTSPOT:-0}" -eq 1 ]; then
+    if [ "$PROXY_HOTSPOT" -eq 1 ]; then
         if [ "$HOTSPOT_INTERFACE" = "$WIFI_INTERFACE" ]; then
             iptables -t mangle -A PROXY_INTERFACE -i "$WIFI_INTERFACE" ! -s 192.168.43.0/24 -j RETURN
             log Info "Hotspot interface $WIFI_INTERFACE will be proxied"
@@ -526,7 +640,7 @@ setup_tproxy_chain4() {
         iptables -t mangle -A BYPASS_INTERFACE -o "$HOTSPOT_INTERFACE" -j ACCEPT
         log Info "Hotspot interface $HOTSPOT_INTERFACE will bypass proxy"
     fi
-    if [ "${PROXY_USB:-0}" -eq 1 ]; then
+    if [ "$PROXY_USB" -eq 1 ]; then
         iptables -t mangle -A PROXY_INTERFACE -i "$USB_INTERFACE" -j RETURN
         log Info "USB interface $USB_INTERFACE will be proxied"
     else
@@ -578,7 +692,7 @@ setup_tproxy_chain4() {
         log Warn "Core traffic bypass not configured, may cause traffic loop"
     fi
 
-    if [ "${APP_PROXY_ENABLE:-0}" -eq 1 ] && check_kernel_feature "NETFILTER_XT_MATCH_OWNER"; then
+    if [ "$APP_PROXY_ENABLE" -eq 1 ] && check_kernel_feature "NETFILTER_XT_MATCH_OWNER"; then
         log Info "Setting up application filter rules in $APP_PROXY_MODE mode"
         case "$APP_PROXY_MODE" in
             blacklist)
@@ -612,7 +726,7 @@ setup_tproxy_chain4() {
         esac
     fi
 
-    case "${DNS_HIJACK_ENABLE:-1}" in
+    case "$DNS_HIJACK_ENABLE" in
         1)
             # Handle DNS from interfaces in PREROUTING chain (DNS_HIJACK_PRE)
             iptables -t mangle -A DNS_HIJACK_PRE -p tcp --dport 53 -j TPROXY --on-port "$PROXY_TCP_PORT" --tproxy-mark "$MARK_VALUE"
@@ -689,7 +803,7 @@ setup_redirect_chain4() {
     fi
 
     iptables -t nat -A PROXY_INTERFACE -i lo -j RETURN
-    if [ "${PROXY_MOBILE:-1}" -eq 1 ]; then
+    if [ "$PROXY_MOBILE" -eq 1 ]; then
         iptables -t nat -A PROXY_INTERFACE -i "$MOBILE_INTERFACE" -j RETURN
         log Info "Mobile interface $MOBILE_INTERFACE will be proxied (REDIRECT mode)"
     else
@@ -697,7 +811,7 @@ setup_redirect_chain4() {
         iptables -t nat -A BYPASS_INTERFACE -o "$MOBILE_INTERFACE" -j ACCEPT
         log Info "Mobile interface $MOBILE_INTERFACE will bypass proxy (REDIRECT mode)"
     fi
-    if [ "${PROXY_WIFI:-1}" -eq 1 ]; then
+    if [ "$PROXY_WIFI" -eq 1 ]; then
         iptables -t nat -A PROXY_INTERFACE -i "$WIFI_INTERFACE" -j RETURN
         log Info "WiFi interface $WIFI_INTERFACE will be proxied (REDIRECT mode)"
     else
@@ -705,7 +819,7 @@ setup_redirect_chain4() {
         iptables -t nat -A BYPASS_INTERFACE -o "$WIFI_INTERFACE" -j ACCEPT
         log Info "WiFi interface $WIFI_INTERFACE will bypass proxy (REDIRECT mode)"
     fi
-    if [ "${PROXY_HOTSPOT:-0}" -eq 1 ]; then
+    if [ "$PROXY_HOTSPOT" -eq 1 ]; then
         if [ "$HOTSPOT_INTERFACE" = "$WIFI_INTERFACE" ]; then
             iptables -t nat -A PROXY_INTERFACE -i "$WIFI_INTERFACE" ! -s 192.168.43.0/24 -j RETURN
             log Info "Hotspot interface $WIFI_INTERFACE will be proxied (REDIRECT mode)"
@@ -717,7 +831,7 @@ setup_redirect_chain4() {
         iptables -t nat -A BYPASS_INTERFACE -o "$HOTSPOT_INTERFACE" -j ACCEPT
         log Info "Hotspot interface $HOTSPOT_INTERFACE will bypass proxy (REDIRECT mode)"
     fi
-    if [ "${PROXY_USB:-0}" -eq 1 ]; then
+    if [ "$PROXY_USB" -eq 1 ]; then
         iptables -t nat -A PROXY_INTERFACE -i "$USB_INTERFACE" -j RETURN
         log Info "USB interface $USB_INTERFACE will be proxied (REDIRECT mode)"
     else
@@ -769,7 +883,7 @@ setup_redirect_chain4() {
         log Warn "Core traffic bypass not configured, may cause traffic loop (REDIRECT mode)"
     fi
 
-    if [ "${APP_PROXY_ENABLE:-0}" -eq 1 ] && check_kernel_feature "NETFILTER_XT_MATCH_OWNER"; then
+    if [ "$APP_PROXY_ENABLE" -eq 1 ] && check_kernel_feature "NETFILTER_XT_MATCH_OWNER"; then
         log Info "Setting up application filter rules in $APP_PROXY_MODE mode (REDIRECT mode)"
         case "$APP_PROXY_MODE" in
             blacklist)
@@ -803,7 +917,7 @@ setup_redirect_chain4() {
         esac
     fi
 
-    case "${DNS_HIJACK_ENABLE:-1}" in
+    case "$DNS_HIJACK_ENABLE" in
         1 | 2)
             # Handle DNS using REDIRECT method
             iptables -t nat -A DNS_HIJACK_PRE -p tcp --dport 53 -j REDIRECT --to-ports "$DNS_PORT"
@@ -826,12 +940,12 @@ setup_tproxy_chain6() {
         safe_chain_create6 mangle "$c6"
     done
 
-    if [ "${PROXY_TCP:-1}" -eq 1 ]; then
+    if [ "$PROXY_TCP" -eq 1 ]; then
         ip6tables -t mangle -I PREROUTING -p tcp -j PROXY_PREROUTING6
         ip6tables -t mangle -I OUTPUT -p tcp -j PROXY_OUTPUT6
         log Info "Added IPv6 TCP rules to PREROUTING and OUTPUT chains"
     fi
-    if [ "${PROXY_UDP:-1}" -eq 1 ]; then
+    if [ "$PROXY_UDP" -eq 1 ]; then
         ip6tables -t mangle -I PREROUTING -p udp -j PROXY_PREROUTING6
         ip6tables -t mangle -I OUTPUT -p udp -j PROXY_OUTPUT6
         log Info "Added IPv6 UDP rules to PREROUTING and OUTPUT chains"
@@ -870,7 +984,7 @@ setup_tproxy_chain6() {
     fi
 
     ip6tables -t mangle -A PROXY_INTERFACE6 -i lo -j RETURN
-    if [ "${PROXY_MOBILE:-1}" -eq 1 ]; then
+    if [ "$PROXY_MOBILE" -eq 1 ]; then
         ip6tables -t mangle -A PROXY_INTERFACE6 -i "$MOBILE_INTERFACE" -j RETURN
         log Info "IPv6 Mobile interface $MOBILE_INTERFACE will be proxied"
     else
@@ -878,7 +992,7 @@ setup_tproxy_chain6() {
         ip6tables -t mangle -A BYPASS_INTERFACE6 -o "$MOBILE_INTERFACE" -j ACCEPT
         log Info "IPv6 Mobile interface $MOBILE_INTERFACE will bypass proxy"
     fi
-    if [ "${PROXY_WIFI:-1}" -eq 1 ]; then
+    if [ "$PROXY_WIFI" -eq 1 ]; then
         ip6tables -t mangle -A PROXY_INTERFACE6 -i "$WIFI_INTERFACE" -j RETURN
         log Info "IPv6 WiFi interface $WIFI_INTERFACE will be proxied"
     else
@@ -886,7 +1000,7 @@ setup_tproxy_chain6() {
         ip6tables -t mangle -A BYPASS_INTERFACE6 -o "$WIFI_INTERFACE" -j ACCEPT
         log Info "IPv6 WiFi interface $WIFI_INTERFACE will bypass proxy"
     fi
-    if [ "${PROXY_HOTSPOT:-0}" -eq 1 ]; then
+    if [ "$PROXY_HOTSPOT" -eq 1 ]; then
         if [ "$HOTSPOT_INTERFACE" != "$WIFI_INTERFACE" ]; then
             ip6tables -t mangle -A PROXY_INTERFACE6 -i "$HOTSPOT_INTERFACE" -j RETURN
             log Info "IPv6 Hotspot interface $HOTSPOT_INTERFACE will be proxied"
@@ -895,7 +1009,7 @@ setup_tproxy_chain6() {
         ip6tables -t mangle -A BYPASS_INTERFACE6 -o "$HOTSPOT_INTERFACE" -j ACCEPT
         log Info "IPv6 Hotspot interface $HOTSPOT_INTERFACE will bypass proxy"
     fi
-    if [ "${PROXY_USB:-0}" -eq 1 ]; then
+    if [ "$PROXY_USB" -eq 1 ]; then
         ip6tables -t mangle -A PROXY_INTERFACE6 -i "$USB_INTERFACE" -j RETURN
         log Info "IPv6 USB interface $USB_INTERFACE will be proxied"
     else
@@ -947,7 +1061,7 @@ setup_tproxy_chain6() {
         log Warn "IPv6 core traffic bypass not configured, may cause traffic loop"
     fi
 
-    if [ "${APP_PROXY_ENABLE:-0}" -eq 1 ] && check_kernel_feature "NETFILTER_XT_MATCH_OWNER"; then
+    if [ "$APP_PROXY_ENABLE" -eq 1 ] && check_kernel_feature "NETFILTER_XT_MATCH_OWNER"; then
         log Info "Setting up IPv6 application filter rules in $APP_PROXY_MODE mode"
         case "$APP_PROXY_MODE" in
             blacklist)
@@ -981,7 +1095,7 @@ setup_tproxy_chain6() {
         esac
     fi
 
-    case "${DNS_HIJACK_ENABLE:-1}" in
+    case "$DNS_HIJACK_ENABLE" in
         1)
             # Handle DNS from interfaces in PREROUTING chain (DNS_HIJACK_PRE)
             ip6tables -t mangle -A DNS_HIJACK_PRE6 -p tcp --dport 53 -j TPROXY --on-port "$PROXY_TCP_PORT" --tproxy-mark "$MARK_VALUE6"
@@ -1065,7 +1179,7 @@ setup_redirect_chain6() {
     fi
 
     ip6tables -t nat -A PROXY_INTERFACE6 -i lo -j RETURN
-    if [ "${PROXY_MOBILE:-1}" -eq 1 ]; then
+    if [ "$PROXY_MOBILE" -eq 1 ]; then
         ip6tables -t nat -A PROXY_INTERFACE6 -i "$MOBILE_INTERFACE" -j RETURN
         log Info "IPv6 Mobile interface $MOBILE_INTERFACE will be proxied (REDIRECT mode)"
     else
@@ -1073,7 +1187,7 @@ setup_redirect_chain6() {
         ip6tables -t nat -A BYPASS_INTERFACE6 -o "$MOBILE_INTERFACE" -j ACCEPT
         log Info "IPv6 Mobile interface $MOBILE_INTERFACE will bypass proxy (REDIRECT mode)"
     fi
-    if [ "${PROXY_WIFI:-1}" -eq 1 ]; then
+    if [ "$PROXY_WIFI" -eq 1 ]; then
         ip6tables -t nat -A PROXY_INTERFACE6 -i "$WIFI_INTERFACE" -j RETURN
         log Info "IPv6 WiFi interface $WIFI_INTERFACE will be proxied (REDIRECT mode)"
     else
@@ -1081,7 +1195,7 @@ setup_redirect_chain6() {
         ip6tables -t nat -A BYPASS_INTERFACE6 -o "$WIFI_INTERFACE" -j ACCEPT
         log Info "IPv6 WiFi interface $WIFI_INTERFACE will bypass proxy (REDIRECT mode)"
     fi
-    if [ "${PROXY_HOTSPOT:-0}" -eq 1 ]; then
+    if [ "$PROXY_HOTSPOT" -eq 1 ]; then
         if [ "$HOTSPOT_INTERFACE" = "$WIFI_INTERFACE" ]; then
             ip6tables -t nat -A PROXY_INTERFACE6 -i "$WIFI_INTERFACE" ! -s 192.168.43.0/24 -j RETURN
             log Info "IPv6 Hotspot interface $WIFI_INTERFACE will be proxied (REDIRECT mode)"
@@ -1093,7 +1207,7 @@ setup_redirect_chain6() {
         ip6tables -t nat -A BYPASS_INTERFACE6 -o "$HOTSPOT_INTERFACE" -j ACCEPT
         log Info "IPv6 Hotspot interface $HOTSPOT_INTERFACE will bypass proxy (REDIRECT mode)"
     fi
-    if [ "${PROXY_USB:-0}" -eq 1 ]; then
+    if [ "$PROXY_USB" -eq 1 ]; then
         ip6tables -t nat -A PROXY_INTERFACE6 -i "$USB_INTERFACE" -j RETURN
         log Info "IPv6 USB interface $USB_INTERFACE will be proxied (REDIRECT mode)"
     else
@@ -1145,7 +1259,7 @@ setup_redirect_chain6() {
         log Warn "IPv6 core traffic bypass not configured, may cause traffic loop (REDIRECT mode)"
     fi
 
-    if [ "${APP_PROXY_ENABLE:-0}" -eq 1 ] && check_kernel_feature "NETFILTER_XT_MATCH_OWNER"; then
+    if [ "$APP_PROXY_ENABLE" -eq 1 ] && check_kernel_feature "NETFILTER_XT_MATCH_OWNER"; then
         log Info "Setting up IPv6 application filter rules in $APP_PROXY_MODE mode (REDIRECT mode)"
         case "$APP_PROXY_MODE" in
             blacklist)
@@ -1179,7 +1293,7 @@ setup_redirect_chain6() {
         esac
     fi
 
-    case "${DNS_HIJACK_ENABLE:-1}" in
+    case "$DNS_HIJACK_ENABLE" in
         1 | 2)
             # Handle DNS using REDIRECT method
             ip6tables -t nat -A DNS_HIJACK_PRE6 -p tcp --dport 53 -j REDIRECT --to-ports "$DNS_PORT"
@@ -1256,11 +1370,11 @@ cleanup_tproxy_chain4() {
     iptables -t mangle -D PROXY_OUTPUT -j APP_CHAIN 2> /dev/null || true
     iptables -t mangle -D PROXY_OUTPUT -j DNS_HIJACK_OUT 2> /dev/null || true
 
-    if [ "${PROXY_TCP:-1}" -eq 1 ]; then
+    if [ "$PROXY_TCP" -eq 1 ]; then
         iptables -t mangle -D PREROUTING -p tcp -j PROXY_PREROUTING 2> /dev/null || true
         iptables -t mangle -D OUTPUT -p tcp -j PROXY_OUTPUT 2> /dev/null || true
     fi
-    if [ "${PROXY_UDP:-1}" -eq 1 ]; then
+    if [ "$PROXY_UDP" -eq 1 ]; then
         iptables -t mangle -D PREROUTING -p udp -j PROXY_PREROUTING 2> /dev/null || true
         iptables -t mangle -D OUTPUT -p udp -j PROXY_OUTPUT 2> /dev/null || true
     fi
@@ -1294,11 +1408,11 @@ cleanup_tproxy_chain6() {
     ip6tables -t mangle -D PROXY_OUTPUT6 -j APP_CHAIN6 2> /dev/null || true
     ip6tables -t mangle -D PROXY_OUTPUT6 -j DNS_HIJACK_OUT6 2> /dev/null || true
 
-    if [ "${PROXY_TCP:-1}" -eq 1 ]; then
+    if [ "$PROXY_TCP" -eq 1 ]; then
         ip6tables -t mangle -D PREROUTING -p tcp -j PROXY_PREROUTING6 2> /dev/null || true
         ip6tables -t mangle -D OUTPUT -p tcp -j PROXY_OUTPUT6 2> /dev/null || true
     fi
-    if [ "${PROXY_UDP:-1}" -eq 1 ]; then
+    if [ "$PROXY_UDP" -eq 1 ]; then
         ip6tables -t mangle -D PREROUTING -p udp -j PROXY_PREROUTING6 2> /dev/null || true
         ip6tables -t mangle -D OUTPUT -p udp -j PROXY_OUTPUT6 2> /dev/null || true
     fi
@@ -1513,6 +1627,8 @@ fi
 check_root
 
 check_dependencies
+
+load_config
 
 validate_user_group
 
