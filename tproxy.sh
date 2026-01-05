@@ -98,10 +98,10 @@ log() {
             ;;
     esac
 
-    if [ -t 1 ]; then
-        printf "%b\n" "${color_code}${timestamp} [${level}]: ${message}\033[0m"
+    if [ -t 2 ]; then
+        printf "%b\n" "${color_code}${timestamp} [${level}]: ${message}\033[0m" >&2
     else
-        printf "%s\n" "${timestamp} [${level}]: ${message}"
+        printf "%s\n" "${timestamp} [${level}]: ${message}" >&2
     fi
 }
 
