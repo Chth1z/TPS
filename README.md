@@ -1,4 +1,4 @@
-# TPS (TProxyShell)
+# FLUX
 
 基于 sing-box 核心的 Android Magisk 透明代理模块
 
@@ -21,6 +21,10 @@
 * **订阅管理**：
     * 内置 subconverter 和 jq 工具
     * 模块启动时/使用update.sh自动下载、转换、节点筛选（按地区正则表达式）及配置文件生成
+* **交互**：
+    - **[Vol+] / [Vol-]** ：是否保留配置文件
+    - **Action按钮**：启动/停止模块（大于订阅更新间隔，则更新订阅）
+    - **web界面**：默认为Zashboard
 
 ## 目录结构
 
@@ -43,3 +47,16 @@
 * `PROXY_APPS_LIST`：需要代理的应用包名列表
 * `BYPASS_CN_IP`：绕过大陆 IP
 * `UPDATE_INTERVAL`：更新订阅最小时间间隔
+
+## 免责声明
+
+- 本项目仅供学习和技术研究使用，请勿用于非法用途。
+- 使用本模块修改系统网络设置可能会导致网络不稳或冲突，请自行承担风险。
+- 开发者不对因使用本模块导致的任何数据丢失或设备损坏负责。
+
+## 致谢
+
+- [SagerNet/sing-box: The universal proxy platform](https://github.com/SagerNet/sing-box)
+- [CHIZI-0618/AndroidTProxyShell: Android tproxy shell](https://github.com/CHIZI-0618/AndroidTProxyShell)
+- [asdlokj1qpi233/subconverter: About Utility to convert between various subscription format](https://github.com/asdlokj1qpi233/subconverter)
+- [jqlang/jq: Command-line JSON processor](https://github.com/jqlang/jq)
