@@ -1,2 +1,5 @@
+conf/config.json
+run/
+*.log
 *.bak
 *.zone
