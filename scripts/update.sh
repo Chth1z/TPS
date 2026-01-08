@@ -9,19 +9,10 @@
 # ------------------------------------------------------------------------------
 # [ Load Dependencies ]
 # ------------------------------------------------------------------------------
-readonly SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
-. "${SCRIPT_DIR}/utils.sh" || {
-    echo "ERROR: Cannot load utils"
-    exit 1
-}
 
-# Internal execution token
-readonly TPROXY_INTERNAL_TOKEN="valid_entry_2026"
+. "$(dirname "$(readlink -f "$0")")/utils.sh"
 
-if [ -t 1 ]; then
-    export INTERACTIVE=1
-fi
-
+export INTERACTIVE=1
 # Set log component name
 export LOG_COMPONENT="Update"
 

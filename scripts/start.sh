@@ -9,15 +9,9 @@
 # ------------------------------------------------------------------------------
 # [ Load Dependencies ]
 # ------------------------------------------------------------------------------
-readonly SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
-. "${SCRIPT_DIR}/utils.sh" || {
-    echo "ERROR: Cannot load utils"
-    exit 1
-}
-
+. "$(dirname "$(readlink -f "$0")")/utils.sh"
 # Ensure script is called via action.sh/internal mechanism
 assert_internal_execution
-
 # Set log component name for logging function
 export LOG_COMPONENT="Manager"
 
@@ -269,10 +263,7 @@ execute_tproxy() {
             sleep 0.5
         done
         
-        printf "\r%-60s\r" " " # Clean the line
-    else
-        # Non-interactive: just wait
-        wait "$pid"
+        printf "\r%-60s\r" " "
     fi
     
     wait "$pid"

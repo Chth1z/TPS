@@ -59,6 +59,7 @@ validate_flux_config() {
     local valid=1
     
     validate_int_range "CORE_TIMEOUT" "$CORE_TIMEOUT" 1 60 || valid=0
+    validate_int_range "UPDATE_TIMEOUT" "$UPDATE_TIMEOUT" 1 60 || valid=0
     validate_int_range "RETRY_COUNT" "$RETRY_COUNT" 0 10 || valid=0
     validate_int_range "UPDATE_INTERVAL" "$UPDATE_INTERVAL" 60 31536000 || valid=0
     validate_int_range "LOG_LEVEL" "$LOG_LEVEL" 0 3 || valid=0
@@ -91,7 +92,6 @@ assert_internal_execution() {
     if [ "${TPROXY_INTERNAL_TOKEN:-}" = "valid_entry_2026" ]; then
         return 0
     fi
-    
     echo "Please use 'action.sh' to manage the service."
     exit 1
 }
@@ -144,7 +144,7 @@ update_description() {
 
     case "$PROP_TEXT" in
         run)
-            desc_text="🥰 [RUNNING] [${pid_info}]"
+            desc_text="🥰 [RUNNING] ${pid_info}"
             ;;
         warn)
             desc_text="🤔 [WARNING] ${PROP_DETAIL:-Unstable}"
@@ -159,11 +159,11 @@ update_description() {
             desc_text="😇 [UNKNOWN]"
             ;;
     esac
-
-    if [ -f "$PROP_FILE" ]; then
-        sed -i -E "s/^description=(🥰|🤔|🤯|😴|😇) \[[A-Z]+\](( PID: [0-9]+)| [^ ]+)? /description=/g" "$PROP_FILE"
-        sed -i "s|^description=|description=${desc_text} |g" "$PROP_FILE" || \
-            log_warn "Failed to update prop"
+    
+    if grep -q "\\\\n" "$PROP_FILE"; then
+        sed -i "s|\\\\n.*|\\\\n${desc_text}|" "$PROP_FILE"
+    else
+        sed -i "s|^description=.*|&\\\\n${desc_text}|" "$PROP_FILE"
     fi
 }
 
@@ -248,6 +248,7 @@ readonly DEFAULT_LOG_ENABLE=1
 readonly DEFAULT_LOG_LEVEL=1
 readonly DEFAULT_LOG_MAX_SIZE=1048576
 readonly DEFAULT_CORE_TIMEOUT=10
+readonly DEFAULT_UPDATE_TIMEOUT=15
 readonly DEFAULT_RETRY_COUNT=3
 readonly DEFAULT_UPDATE_INTERVAL=86400
 # TProxy Default Settings
@@ -291,7 +292,7 @@ readonly DEFAULT_CN_IPV6_URL="https://ispip.clang.cn/all_cn_ipv6.txt"
 readonly DEFAULT_MAC_FILTER_ENABLE=0
 readonly DEFAULT_PROXY_MACS_LIST=""
 readonly DEFAULT_BYPASS_MACS_LIST=""
-readonly DEFAULT_MAC_PROXY_MODE="1
+readonly DEFAULT_MAC_PROXY_MODE="1"
 
 
 # ==============================================================================
@@ -304,7 +305,7 @@ readonly CONF_DIR="$FLUX_DIR/conf"
 readonly SCRIPTS_DIR="$FLUX_DIR/scripts"
 readonly RUN_DIR="$FLUX_DIR/run"
 readonly TOOLS_DIR="$FLUX_DIR/tools"
-readonly MAGISK_MOD_DIR="/data/adb/modules/TProxyShell"
+readonly MAGISK_MOD_DIR="/data/adb/modules/Flux"
 # Core Files
 readonly SING_BOX_BIN="$BIN_DIR/sing-box"
 readonly CONFIG_FILE="$CONF_DIR/config.json"
@@ -350,6 +351,7 @@ load_flux_config() {
     
     SUBSCRIPTION_URL="${SUBSCRIPTION_URL:-$DEFAULT_SUBSCRIPTION_URL}"
     CORE_TIMEOUT="${CORE_TIMEOUT:-$DEFAULT_CORE_TIMEOUT}"
+    UPDATE_TIMEOUT="${UPDATE_TIMEOUT:-$DEFAULT_UPDATE_TIMEOUT}"
     UPDATE_INTERVAL="${UPDATE_INTERVAL:-$DEFAULT_UPDATE_INTERVAL}"
     RETRY_COUNT="${RETRY_COUNT:-$DEFAULT_RETRY_COUNT}"
     LOG_ENABLE="${LOG_ENABLE:-$DEFAULT_LOG_ENABLE}"

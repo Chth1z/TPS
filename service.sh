@@ -1,13 +1,15 @@
 #!/system/bin/sh
 
+
 # ==============================================================================
 # ENVIRONMENT SETUP
 # ==============================================================================
 
-readonly FLUX_DIR="/data/adb/Flux"
-readonly SCRIPTS_DIR="${FLUX_DIR}/scripts"
-readonly START_SCRIPT="${SCRIPTS_DIR}/start.sh"
-readonly LOG_FILE="${FLUX_DIR}/run/Flux.log"
+# Load system configuration
+. "/data/adb/Flux/scripts/utils.sh" || {
+    echo "ERROR: Cannot load utils"
+    exit 1
+}
 
 export LOG_COMPONENT="Service"
 export TPROXY_INTERNAL_TOKEN="valid_entry_2026"
@@ -18,8 +20,6 @@ export TPROXY_INTERNAL_TOKEN="valid_entry_2026"
 
 # Wait for the Android system to signal boot completion via getprop
 wait_for_boot() {
-    log_info "Waiting for system boot completion..."
-    
     local boot_wait_count=0
     local MAX_BOOT_WAIT=60
     
@@ -43,29 +43,14 @@ wait_for_boot() {
 # ==============================================================================
 
 main() {
-    log_info "TProxyShell Boot Service Starting"
-    
-    if ! wait_for_boot; then
-        log_error "Boot timeout, attempting to start anyway..."
-    fi
-    
+    wait_for_boot
+   
     sleep 5
     
-    if [ ! -f "$START_SCRIPT" ]; then
-        log_error "Startup script not found: $START_SCRIPT"
-        exit 1
-    fi
-    
-    if [ ! -x "$START_SCRIPT" ]; then
-        chmod +x "$START_SCRIPT" 2>/dev/null || {
-            log_error "Failed to set executable permission on $START_SCRIPT"
-            exit 1
-        }
-    fi
+    [ ! -f "$START_SCRIPT" ] && exit 1
+    [ ! -x "$START_SCRIPT" ] && chmod +x "$START_SCRIPT" 2>/dev/null
     
     /system/bin/sh "$START_SCRIPT" start >/dev/null 2>&1 &
-    
-    log_info "Launching service startup script..."
 }
 
 main

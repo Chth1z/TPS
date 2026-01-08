@@ -5,14 +5,9 @@
 # SCRIPT SETUP & ENVIRONMENT
 # ==============================================================================
 
-readonly SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
-. "${SCRIPT_DIR}/utils.sh" || {
-    echo "ERROR: Cannot load utils"
-    exit 1
-}
+. "$(dirname "$(readlink -f "$0")")/utils.sh"
 
 assert_internal_execution
-
 # Set log component for logging utility
 export LOG_COMPONENT="Tproxy"
 

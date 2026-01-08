@@ -30,10 +30,8 @@ main() {
         toggle)
             # Check if service is running
 			if is_core_running; then
-				log_info ">>>>>STOPPING<<<<<"
 				/system/bin/sh "$START_SCRIPT" stop
 			else
-				log_info ">>>>>STARTING<<<<<"
 				/system/bin/sh "$START_SCRIPT" start
 			fi
             ;;
