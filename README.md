@@ -1,62 +1,191 @@
 # FLUX
 
-基于 sing-box 核心的 Android Magisk 透明代理模块
+> Seamlessly redirect your network flux.
 
-## 功能特性
+A powerful Android transparent proxy module powered by [sing-box](https://sing-box.sagernet.org/), designed for Magisk / KernelSU / APatch.
 
-* **核心组件**：
-    * 集成 sing-box 作为核心
-* **代理模式**：
-    * 支持 TPROXY（默认，支持 UDP）和 REDIRECT 模式
-* **网络支持**：
-    * 支持 IPv4 和 IPv6 双栈代理
-    * 支持 DNS 劫持（TProxy/Redirect 模式）
-    * 支持绕过中国大陆 IP（基于 ipset）
-* **接口控制**：
-    * 可独立控制移动数据、Wi-Fi、热点、USB 网络接口的代理开关
-* **过滤机制**：
-    * **应用过滤**：基于 UID 的黑/白名单模式
-    * **MAC 过滤**：针对热点连接设备的 MAC 地址黑/白名单过滤
-    * **防环路**：内置路由标记和用户组保护，防止流量死循环
-* **订阅管理**：
-    * 内置 subconverter 和 jq 工具
-    * 模块启动时/使用update.sh自动下载、转换、节点筛选（按地区正则表达式）及配置文件生成
-* **交互**：
-    - **[Vol+] / [Vol-]** ：是否保留配置文件
-    - **Action按钮**：启动/停止模块（大于订阅更新间隔，则更新订阅）
-    - **web界面**：默认为Zashboard
+## Features
 
-## 目录结构
+### Core Components
+- **sing-box Integration**: Uses sing-box as the core proxy engine
+- **Subconverter Built-in**: Automatic subscription conversion and node filtering
+- **jq Processor**: JSON manipulation for configuration generation
 
-所有模块文件位于 `/data/adb/box/`：
+### Proxy Modes
+- **TPROXY** (default): Full TCP/UDP support with transparent proxying
+- **REDIRECT**: Fallback mode for kernels without TPROXY support
+- **Auto Detection**: Automatically selects the best mode based on kernel capabilities
 
-* `bin/`：存放 sing-box 核心
-* `conf/`：存放 `config.json` 和 `settings.ini`
-* `run/`：存放运行时 PID、日志和临时文件
-* `scripts/`：存放功能脚本
-* `tools/`：存放 jq、subconverter 及转换模板
+### Network Support
+- **Dual-Stack**: Full IPv4 and IPv6 proxy support
+- **DNS Hijacking**: TProxy/Redirect mode DNS interception
+- **China IP Bypass**: IPset-based mainland China IP bypass (optional)
+- **FakeIP ICMP Fix**: Enables ping to work correctly with FakeIP DNS
 
-## 配置说明
+### Interface Control
+Independent proxy switches for each network interface:
+- Mobile Data (`rmnet_data+`)
+- Wi-Fi (`wlan0`)
+- Hotspot (`wlan2`)
+- USB Tethering (`rndis+`)
 
-主配置文件路径：`/data/adb/box/conf/settings.ini`
+### Filtering Mechanisms
+- **Per-App Proxy**: UID-based blacklist/whitelist mode
+- **MAC Filter**: MAC address filtering for hotspot clients
+- **Anti-Loopback**: Built-in route marking and user group protection to prevent traffic loops
+- **Dynamic IP Monitor**: Automatically handles temporary IPv6 addresses
 
-关键配置项：
-* `SUBSCRIPTION_URL`：订阅链接
-* `PROXY_MODE`：0=自动, 1=TProxy, 2=Redirect
-* `APP_PROXY_MODE`：1=黑名单, 2=白名单
-* `PROXY_APPS_LIST`：需要代理的应用包名列表
-* `BYPASS_CN_IP`：绕过大陆 IP
-* `UPDATE_INTERVAL`：更新订阅最小时间间隔
+### Subscription Management
+- Automatic download, conversion, and configuration generation
+- Node filtering by region (regex-based country matching)
+- Configurable update interval with smart caching
+- Manual force update via `updater.sh`
 
-## 免责声明
+### Interaction
+- **[Vol+] / [Vol-]**: Choose whether to preserve configuration during installation
+- **Module Toggle**: Enable/disable via Magisk Manager (reactive inotify-based)
+- **Update Subscription**: Auto-updates on boot if `UPDATE_INTERVAL` has passed; run `updater.sh force` to update manually
+- **Web Dashboard**: Zashboard UI at `http://127.0.0.1:9090/ui/`
 
-- 本项目仅供学习和技术研究使用，请勿用于非法用途。
-- 使用本模块修改系统网络设置可能会导致网络不稳或冲突，请自行承担风险。
-- 开发者不对因使用本模块导致的任何数据丢失或设备损坏负责。
+---
 
-## 致谢
+## Directory Structure
 
-- [SagerNet/sing-box: The universal proxy platform](https://github.com/SagerNet/sing-box)
-- [CHIZI-0618/AndroidTProxyShell: Android tproxy shell](https://github.com/CHIZI-0618/AndroidTProxyShell)
-- [asdlokj1qpi233/subconverter: About Utility to convert between various subscription format](https://github.com/asdlokj1qpi233/subconverter)
-- [jqlang/jq: Command-line JSON processor](https://github.com/jqlang/jq)
+All module files are located at `/data/adb/Flux/`:
+
+```
+/data/adb/Flux/
+├── bin/
+│   └── sing-box              # sing-box core binary
+│
+├── conf/
+│   ├── config.json           # Generated sing-box configuration
+│   └── settings.ini          # User configuration file
+│
+├── run/
+│   ├── Flux.log              # Runtime logs (with rotation)
+│   ├── Flux.pid              # Core process PID
+│   └── .ip_cache             # IP monitor cache
+│
+├── scripts/
+│   ├── flux.config           # Centralized path definitions & defaults
+│   ├── flux.core             # Core lifecycle management (start/stop)
+│   ├── flux.ip.monitor       # Dynamic IP address monitor daemon
+│   ├── flux.logger           # Advanced logging & prop management
+│   ├── flux.mod.inotify      # Module toggle listener (inotifyd)
+│   ├── flux.tproxy           # TProxy/Redirect iptables rules
+│   ├── start.sh              # Service orchestrator (parallel start/stop)
+│   └── updater.sh            # Subscription updater & config generator
+│
+├── tools/
+│   ├── base/
+│   │   └── singbox.json      # sing-box configuration template
+│   ├── jq                    # jq binary for JSON processing
+│   ├── pref.toml             # Subconverter preferences
+│   └── subconverter          # Subconverter binary
+│
+└── state/
+    ├── .core_ready           # Core startup completion flag
+    ├── .tproxy_ready         # TProxy setup completion flag
+    └── .last_update          # Last subscription update timestamp
+```
+
+### Magisk Module Directory (`/data/adb/modules/Flux/`)
+
+```
+/data/adb/modules/Flux/
+├── webroot/                  # Web dashboard files
+├── service.sh                # Boot service launcher
+├── module.prop               # Module metadata
+└── disable                   # (Created when module is disabled)
+```
+
+---
+
+## Configuration
+
+Main configuration file: `/data/adb/Flux/conf/settings.ini`
+
+### Key Settings
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `SUBSCRIPTION_URL` | Subscription URL | (empty) |
+| `PROXY_MODE` | 0=Auto, 1=TProxy, 2=Redirect | `0` |
+| `PROXY_TCP` | Enable TCP proxy | `1` |
+| `PROXY_UDP` | Enable UDP proxy | `1` |
+| `PROXY_IPV6` | Enable IPv6 proxy | `0` |
+| `DNS_HIJACK_ENABLE` | 0=Disable, 1=TProxy, 2=Redirect | `1` |
+| `UPDATE_INTERVAL` | Auto-update interval (seconds) | `86400` |
+
+### Interface Proxy Switches
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `PROXY_MOBILE` | Proxy mobile data | `1` |
+| `PROXY_WIFI` | Proxy Wi-Fi | `1` |
+| `PROXY_HOTSPOT` | Proxy hotspot clients | `0` |
+| `PROXY_USB` | Proxy USB tethering | `0` |
+
+### Per-App Proxy
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `APP_PROXY_ENABLE` | Enable per-app filtering | `0` |
+| `APP_PROXY_MODE` | 1=Blacklist, 2=Whitelist | `1` |
+| `PROXY_APPS_LIST` | Apps to proxy (whitelist) | (empty) |
+| `BYPASS_APPS_LIST` | Apps to bypass (blacklist) | (empty) |
+
+### China IP Bypass
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `BYPASS_CN_IP` | Enable China IP bypass | `0` |
+| `CN_IP_URL` | IPv4 CIDR list URL | GeoIP2-CN |
+| `CN_IPV6_URL` | IPv6 CIDR list URL | ispip.clang.cn |
+
+### MAC Filter (Hotspot Only)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `MAC_FILTER_ENABLE` | Enable MAC filtering | `0` |
+| `MAC_PROXY_MODE` | 1=Blacklist, 2=Whitelist | `1` |
+| `PROXY_MACS_LIST` | MACs to proxy | (empty) |
+| `BYPASS_MACS_LIST` | MACs to bypass | (empty) |
+
+---
+
+## Installation
+
+1. Download the latest release ZIP from [Releases](https://github.com/Chth1z/Flux/releases)
+2. Install via Magisk Manager / KernelSU / APatch
+3. During installation:
+   - Press **[Vol+]** to preserve existing configuration
+   - Press **[Vol-]** to use fresh default configuration
+4. Configure your subscription URL in `/data/adb/Flux/conf/settings.ini`
+5. Reboot to start
+
+---
+
+## Disclaimer
+
+- This project is for educational and research purposes only. Do not use for illegal purposes.
+- Modifying system network settings may cause instability or conflicts. Use at your own risk.
+- The developer is not responsible for any data loss or device damage caused by using this module.
+
+---
+
+## Credits
+
+- [SagerNet/sing-box](https://github.com/SagerNet/sing-box) - The universal proxy platform
+- [CHIZI-0618/AndroidTProxyShell](https://github.com/CHIZI-0618/AndroidTProxyShell) - Android TProxy shell reference
+- [asdlokj1qpi233/subconverter](https://github.com/asdlokj1qpi233/subconverter) - Subscription format converter
+- [jqlang/jq](https://github.com/jqlang/jq) - Command-line JSON processor
+- [taamarin/box_for_magisk](https://github.com/taamarin/box_for_magisk) - Magisk module patterns and inspiration
+- [CHIZI-0618/box4magisk](https://github.com/CHIZI-0618/box4magisk) - Magisk module reference
+
+---
+
+## License
+
+[GPL-3.0](LICENSE)
