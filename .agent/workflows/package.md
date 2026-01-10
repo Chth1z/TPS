@@ -48,6 +48,7 @@ $itemsToInclude = @(
     "bin",
     "conf", 
     "META-INF",
+    "run",
     "scripts",
     "tools",
     "webroot",

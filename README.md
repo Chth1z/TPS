@@ -1,4 +1,4 @@
-# FLUX
+# Flux
 
 > Seamlessly redirect your network flux.
 
@@ -63,9 +63,13 @@ All module files are located at `/data/adb/Flux/`:
 │   └── settings.ini          # User configuration file
 │
 ├── run/
-│   ├── Flux.log              # Runtime logs (with rotation)
-│   ├── Flux.pid              # Core process PID
-│   └── .ip_cache             # IP monitor cache
+│   ├── zashboard/            # Web dashboard files
+│   ├── sing-box.log          # sing-box core logs
+│   ├── Flux.log              # Module runtime logs (with rotation)
+│   ├── sing-box.pid          # sing-box process PID
+│   ├── ip_monitor.pid        # IP monitor daemon PID
+│   ├── cache.db              # sing-box cache database
+│   └── .ip_cache             # IP monitor address cache
 │
 ├── scripts/
 │   ├── flux.config           # Centralized path definitions & defaults
@@ -94,7 +98,8 @@ All module files are located at `/data/adb/Flux/`:
 
 ```
 /data/adb/modules/Flux/
-├── webroot/                  # Web dashboard files
+├── webroot/
+│   └── index.html            # Redirect to dashboard UI
 ├── service.sh                # Boot service launcher
 ├── module.prop               # Module metadata
 └── disable                   # (Created when module is disabled)
